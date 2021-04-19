@@ -392,6 +392,7 @@ public class WebsocketInboundHandler extends ChannelInboundHandlerAdapter {
         apiPropertiesMap.put(RESTConstants.SYNAPSE_REST_API_VERSION, version);
         if (electedAPI.getApiType().equals(APIConstants.GRAPHQL_API)){
             apiPropertiesMap.put(APIMgtGatewayConstants.API_OBJECT, (Object) electedAPI);
+            apiPropertiesMap.put(APIConstants.GRAPHQL_SUBSCRIPTION_REQUEST, true);
         }
         ctx.channel().attr(WebSocketUtils.WSO2_PROPERTIES).set(apiPropertiesMap);
     }
