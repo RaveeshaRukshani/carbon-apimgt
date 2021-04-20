@@ -31,6 +31,8 @@ import Collapse from '@material-ui/core/Collapse';
 import { ApiContext } from '../ApiContext';
 import Api from '../../../../data/api';
 import QueryComplexityView from './QueryComplexityView';
+import { SubscriptionClient } from 'subscriptions-transport-ws';
+import { graphQLFetcher } from'graphiql-subscriptions-fetcher/dist/fetcher'; 
 
 import Progress from '../../../Shared/Progress';
 
@@ -83,7 +85,7 @@ export default function GraphQLUI(props) {
      *
      * @param {*} graphQLParams
      */
-    function graphQLFetcher(graphQLParams) {
+    function graphiQLFetcher(graphQLParams) {
         let token;
         if (authorizationHeader === 'apikey') {
             token = accessTokenProvider();
@@ -102,9 +104,25 @@ export default function GraphQLUI(props) {
             body: JSON.stringify(graphQLParams),
         }).then((response) => response.json());
     }
+    function queryFetcher(wsUrl){
+        if (wsUrl == null){
+            return graphiQLFetcher;
+        } else { 
+            let subscriptionsClient = new SubscriptionClient(wsUrl+'?access_token='+accessTokenProvider(), {
+                reconnect: true,
+                lazy: true
+            });
+            let subscriptionFetcher = graphQLFetcher(subscriptionsClient, graphiQLFetcher);
+            return subscriptionFetcher;
+        }
+    }
     if ({ schema } === null) {
         return <Progress />;
     } else {
+        let display = {display:''};
+        if (URLs.wss == null){
+            display = {display:'none'}
+        }
         return (
             <>
                 <Box width='30%' m={1}>
@@ -121,6 +139,15 @@ export default function GraphQLUI(props) {
                         margin='normal'
                         variant='outlined'
                         InputProps={URLs && URLs.https}
+                        disabled
+                    />
+                    <TextField style={display}
+                        value={URLs.wss}
+                        name='selectedURL'
+                        fullWidth
+                        margin='normal'
+                        variant='outlined'
+                        InputProps={URLs.wss}
                         disabled
                     />
                 </Box>
@@ -147,7 +174,7 @@ export default function GraphQLUI(props) {
                             <Box display='flex' height='800px' flexGrow={1}>
                                 <GraphiQL
                                     ref={graphiqlEl}
-                                    fetcher={(graphQLFetcher)}
+                                    fetcher={(queryFetcher(URLs.wss))}
                                     schema={schema}
                                     query={query}
                                     onEditQuery={setQuery}
