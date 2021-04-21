@@ -591,6 +591,7 @@ public final class APIConstants {
     public static final String DELEM_COMMA = ",";
     public static final String DELEM_UNDERSCORE = "_";
     public static final String CHAR_ASTERIX = "*";
+    public static final String CHAR_SLASH = "/";
     public static final String CERTIFICATE_RETRIEVAL_ENDPOINT = "/endpoint-certificates";
     public static final String GA_CONFIG_RETRIEVAL_ENDPOINT = "/ga-config";
     public static final String API_OVERVIEW_WEBSUB_SUBSCRIPTION_CONFIGURATION
@@ -603,6 +604,10 @@ public final class APIConstants {
     public static final String ENABLE_TENANT_BASE_SIGNING = "EnableTenantBasedSigning";
     public static final String DEFAULT_WEBSUB_SIGNING_ALGO = "SHA1";
     public static final String DEFAULT_WEBSUB_SIGNATURE_HEADER = "x-hub-signature";
+    public static final String API_GRAPHQL_WS_ENDPOINT = "/graphql";
+    public static final String API_GRAPHQL_SUBSCRIPTION_CONTEXT = "/subscription";
+    public static final String API_GRAPHQL_WS_API_NAME = "GraphQLWS";
+
 
     public static class TokenStatus {
 

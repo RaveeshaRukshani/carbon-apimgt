@@ -37,6 +37,7 @@ import org.wso2.carbon.apimgt.api.gateway.CredentialDto;
 import org.wso2.carbon.apimgt.api.gateway.GatewayAPIDTO;
 import org.wso2.carbon.apimgt.api.gateway.GatewayContentDTO;
 import org.wso2.carbon.apimgt.api.model.API;
+import org.wso2.carbon.apimgt.api.model.APIIdentifier;
 import org.wso2.carbon.apimgt.api.model.APIProduct;
 import org.wso2.carbon.apimgt.api.model.APIProductIdentifier;
 import org.wso2.carbon.apimgt.api.model.APIProductResource;
@@ -48,6 +49,8 @@ import org.wso2.carbon.apimgt.impl.APIConstants;
 import org.wso2.carbon.apimgt.impl.APIMRegistryService;
 import org.wso2.carbon.apimgt.impl.APIMRegistryServiceImpl;
 import org.wso2.carbon.apimgt.impl.certificatemgt.exceptions.CertificateManagementException;
+import org.wso2.carbon.apimgt.impl.definitions.AsyncApiParser;
+import org.wso2.carbon.apimgt.impl.definitions.GraphQLSchemaDefinition;
 import org.wso2.carbon.apimgt.impl.dto.SoapToRestMediationDto;
 import org.wso2.carbon.apimgt.impl.importexport.ImportExportConstants;
 import org.wso2.carbon.apimgt.impl.internal.ServiceReferenceHolder;
@@ -633,6 +636,103 @@ public class TemplateBuilderUtil {
             template.setUriTemplate("/*");
             uriTemplates.add(template);
             api.setUriTemplates(uriTemplates);
+
+            GraphQLSchemaDefinition graphql = new GraphQLSchemaDefinition();
+            if (graphql.checkSubscriptionAvailability(api.getGraphQLSchema())) {
+                String wsAPIName = api.getId().getName() + APIConstants.API_GRAPHQL_WS_API_NAME;
+                String wsAPIVersion = api.getId().getVersion();
+                String wsAPIProviderName = api.getId().getProviderName();
+                String wsAPIContext = apidto.getContext();
+                APIIdentifier wsapiId = new APIIdentifier(wsAPIProviderName, wsAPIName, wsAPIVersion);
+                API wsapi = new API(wsapiId);
+                wsapi.setType(APIConstants.API_TYPE_WS);
+                wsapi.setContext(wsAPIContext);
+                wsapi.setContextTemplate(wsAPIContext + "/{version}");
+                wsapi.setAvailableTiers(api.getAvailableTiers());
+                wsapi.setStatus(api.getStatus());
+                wsapi.setTransports(api.getTransports());
+                wsapi.setEnvironments(api.getEnvironments());
+                wsapi.setDescription(APIConstants.API_GRAPHQL_WS_API_NAME);
+                String productionEndpoint = null;
+                String sandboxEndpoint = null;
+                org.json.JSONObject obj = new org.json.JSONObject(api.getEndpointConfig());
+                if (obj.has(APIConstants.API_DATA_PRODUCTION_ENDPOINTS)) {
+                    productionEndpoint = obj.getJSONObject(APIConstants.API_DATA_PRODUCTION_ENDPOINTS)
+                            .getString("url");
+
+                    if (productionEndpoint.endsWith("/")) {
+                        productionEndpoint = productionEndpoint.substring(0,
+                                productionEndpoint.length() - 1);
+                    }
+                    productionEndpoint = productionEndpoint.replace(
+                            APIConstants.APITransportType.HTTP.toString().toLowerCase(),
+                            APIConstants.APITransportType.WS.toString().toLowerCase());
+                    productionEndpoint = productionEndpoint + APIConstants.API_GRAPHQL_WS_ENDPOINT;
+                }
+                if (obj.has(APIConstants.API_DATA_SANDBOX_ENDPOINTS)) {
+                    sandboxEndpoint = obj.getJSONObject(APIConstants.API_DATA_SANDBOX_ENDPOINTS)
+                            .getString("url");
+                    if (sandboxEndpoint.endsWith("/")) {
+                        sandboxEndpoint = sandboxEndpoint.substring(0, sandboxEndpoint.length() - 1);
+                    }
+                    sandboxEndpoint = sandboxEndpoint.replace(
+                            APIConstants.APITransportType.HTTP.toString().toLowerCase(),
+                            APIConstants.APITransportType.WS.toString().toLowerCase());
+                    sandboxEndpoint = sandboxEndpoint + APIConstants.API_GRAPHQL_WS_ENDPOINT;
+                }
+
+                String endpointConfig = "{\"endpoint_type\":\"ws\"," +
+                        "\"sandbox_endpoints\":{\"url\":\"" + sandboxEndpoint + "\"}," +
+                        "\"production_endpoints\":{\"url\":\"" + productionEndpoint + "\"}}";
+                wsapi.setEndpointConfig(endpointConfig);
+
+                Set<URITemplate> templates = APIMappingUtil.getURITemplates(wsapi, null);
+                wsapi.setUriTemplates(templates);
+
+                AsyncApiParser asyncApiParser = new AsyncApiParser();
+                String asyncApiDefinition = asyncApiParser.generateAsyncAPIDefinition(wsapi);
+                wsapi.setAsyncApiDefinition(asyncApiDefinition);
+
+                gatewayAPIDTO.setLocalEntriesToBeRemove(GatewayUtils.addStringToList(api.getUUID(),
+                        gatewayAPIDTO.getLocalEntriesToBeRemove()));
+                GatewayContentDTO apiLocalEntry = new GatewayContentDTO();
+                apiLocalEntry.setName(api.getUUID());
+                apiLocalEntry.setContent("<localEntry key=\"" + api.getUUID() + "\">" +
+                        asyncApiDefinition.replaceAll("&(?!amp;)", "&amp;").
+                                replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+                        + "</localEntry>");
+                gatewayAPIDTO.setLocalEntriesToBeAdd(addGatewayContentToList(apiLocalEntry,
+                        gatewayAPIDTO.getLocalEntriesToBeAdd()));
+
+                List<MediationPolicyDTO> mediationPolicies = new ArrayList<>();
+
+                List<URITemplate> templateList = new ArrayList<>(templates);
+                List<APIOperationsDTO> operations = APIMappingUtil.fromURITemplateListToOprationList(templateList);
+                APIDTO wsApiDTO = new APIDTO();
+                wsApiDTO.setName(wsAPIName);
+                wsApiDTO.setContext(apidto.getContext());
+                wsApiDTO.setMediationPolicies(mediationPolicies);
+                wsApiDTO.setOperations(operations);
+
+                GatewayUtils.setCustomSequencesToBeRemoved(wsapi, gatewayAPIDTO);
+                setAPIFaultSequencesToBeAdded(wsapi, gatewayAPIDTO, extractedPath, wsApiDTO);
+                setCustomSequencesToBeAdded(wsapi, gatewayAPIDTO, extractedPath, wsApiDTO);
+                setClientCertificatesToBeAdded(tenantDomain, gatewayAPIDTO, clientCertificatesDTOList);
+
+                addWebsocketTopicMappings(wsapi, wsApiDTO);
+                List<SoapToRestMediationDto> soapToRestInMediationDtoList = new ArrayList<>();
+                List<SoapToRestMediationDto> soapToRestOutMediationDtoList = new ArrayList<>();
+
+                APITemplateBuilder apiTemplateBuilder = TemplateBuilderUtil.getAPITemplateBuilder(wsapi, tenantDomain,
+                        clientCertificatesDTOList, soapToRestInMediationDtoList, soapToRestOutMediationDtoList);
+
+                org.json.JSONObject endpointConfiguration = new org.json.JSONObject(wsapi.getEndpointConfig());
+                if (!endpointConfiguration.get(APIConstants.API_ENDPOINT_CONFIG_PROTOCOL_TYPE)
+                        .equals(APIConstants.ENDPOINT_TYPE_AWSLAMBDA)) {
+                    addWebSocketResourceEndpoints(wsapi, apiTemplateBuilder, gatewayAPIDTO);
+                }
+
+            }
         } else if (api.getType() != null && (APIConstants.APITransportType.HTTP.toString().equals(api.getType())
                 || APIConstants.API_TYPE_SOAP.equals(api.getType())
                 || APIConstants.API_TYPE_SOAPTOREST.equals(api.getType()))) {
